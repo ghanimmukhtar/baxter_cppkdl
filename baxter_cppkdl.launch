@@ -3,8 +3,8 @@
   <!--node name="baxter_cartesian_control" pkg="baxter_python_cpp" type="baxter_cart_controller.py" respawn="false" output="screen" args="-l right -f effector">
   </node-->
   <!-- Left and right electric gripper params. Set to true to check for collisions for their links -->
-  <arg name="right_electric_gripper" default="false"/>
-  <arg name="left_electric_gripper" default="false"/>
+  <arg name="right_electric_gripper" default="true"/>
+  <arg name="left_electric_gripper" default="true"/>
   <!-- Set the kinematic tips for the left_arm and right_arm move_groups -->
   <arg name="left_tip_name" default="left_gripper"/>
   <arg name="right_tip_name" default="right_gripper"/>
@@ -17,8 +17,9 @@
           left_tip_name:=$(arg left_tip_name)
           right_tip_name:=$(arg right_tip_name)"/>
 
-  <node name="moveit_with_pykdl" pkg="baxter_cppkdl" type="moveit_with_pykdl" args="0.0 0.9 0.199257" output="screen">
-        <!--remap from="/joint_states" to="/robot/joint_states"/-->
+  
+  <node name="moveit_with_pykdl" pkg="baxter_cppkdl" type="moveit_with_pykdl_left" args="0.916924 0.420561 -0.183332 0 0 0" output="screen">
   </node>
+  
 
 </launch>

@@ -40,3 +40,6 @@ include_directories(
 
 add_executable(moveit_with_pykdl src/moveit_with_pykdl.cpp)
 target_link_libraries(moveit_with_pykdl ${catkin_LIBRARIES})
+
+add_executable(moveit_with_pykdl_left src/moveit_with_pykdl_left.cpp)
+target_link_libraries(moveit_with_pykdl_left ${catkin_LIBRARIES})

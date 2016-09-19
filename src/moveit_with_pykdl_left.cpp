@@ -1,5 +1,4 @@
 #include <ros/ros.h>
-#include <ros/callback_queue.h>
 #include <iostream>
 #include <fstream>
 #include <math.h>
@@ -12,56 +11,59 @@
 #include <moveit/robot_model_loader/robot_model_loader.h>
 #include <baxter_core_msgs/JointCommand.h>
 
-Eigen::VectorXd ee_twist(6), ee_twist_ext(7), ee_twist_sup(6), left_arm_joints_velocity(7), left_arm_joints_position(7), qdot(7),joint_values(7);
-std::vector<double> joints_values(7),feedback_joints_values(7),q(7);
+Eigen::VectorXd ee_twist(6), qdot(7);
+std::vector<double> joints_values(7),q(7);
 Eigen::MatrixXd my_jac(6,7);
 Eigen::MatrixXd my_final_jac(6,8);
-std::ofstream vel_command_file,vel_feedback_file,position_feedback_file,calculated_twist,feedback_twist;
 
 void jocommCallback(sensor_msgs::JointState jo_state)
 {
-    left_arm_joints_velocity(0) = jo_state.velocity[5]; left_arm_joints_velocity(1) = jo_state.velocity[6]; left_arm_joints_velocity(2) = jo_state.velocity[3];
-    left_arm_joints_velocity(3) = jo_state.velocity[4]; left_arm_joints_velocity(4) = jo_state.velocity[7]; left_arm_joints_velocity(5) = jo_state.velocity[8];
-    left_arm_joints_velocity(6) = jo_state.velocity[9];
-    left_arm_joints_position(0) = jo_state.position[5]; left_arm_joints_position(1) = jo_state.position[6]; left_arm_joints_position(2) = jo_state.position[3];
-    left_arm_joints_position(3) = jo_state.position[4]; left_arm_joints_position(4) = jo_state.position[7]; left_arm_joints_position(5) = jo_state.position[8];
-    left_arm_joints_position(6) = jo_state.position[9];
+    joints_values[0] = jo_state.position[5]; joints_values[1] = jo_state.position[6]; joints_values[2] = jo_state.position[3];
+    joints_values[3] = jo_state.position[4]; joints_values[4] = jo_state.position[7]; joints_values[5] = jo_state.position[8];
+    joints_values[6] = jo_state.position[9];
+}
 
-    for (int i = 0; i < joints_values.size(); i++)
-        joints_values[i] = left_arm_joints_position(i);
-    vel_command_file << qdot(0) << "," << qdot(1) << "," << qdot(2) << "," << qdot(3) << "," << qdot(4) << "," << qdot(5) << "," << qdot(6) << "\n";
-    vel_feedback_file << left_arm_joints_velocity(0) << "," << left_arm_joints_velocity(1) << "," << left_arm_joints_velocity(2) << "," << left_arm_joints_velocity(3) << "," <<
-                left_arm_joints_velocity(4) << "," << left_arm_joints_velocity(5) << "," << left_arm_joints_velocity(6) << "\n";
-    position_feedback_file << left_arm_joints_position(0) << "," << left_arm_joints_position(1) << "," << left_arm_joints_position(2) << "," << left_arm_joints_position(3) << "," <<
-            left_arm_joints_position(4) << "," << left_arm_joints_position(5) << "," << left_arm_joints_position(6) << "\n";
+//This is a function that takes as inputs: a character that name an axis (x, y or z), and a float that represents an angle of rotation about that axis. It returns the corresponding rotation matrix (3x3)
+Eigen::Matrix3d Rot(char axis, float angle) {
+    Eigen::Matrix3d RotX,RotY,RotZ,empty_Rot;
+    if (axis == 'x'){
+        RotX << 1,          0,           0,
+                0, cos(angle), -sin(angle),
+                0, sin(angle),  cos(angle);
+        return RotX;
+    }
+    else if (axis == 'y'){
+        RotY << cos(angle),  0, sin(angle),
+                         0,  1,          0,
+               -sin(angle),  0, cos(angle);
+        return RotY;
+    }
+    else if (axis == 'z'){
+        RotZ << cos(angle), -sin(angle), 0,
+                sin(angle),  cos(angle), 0,
+                         0,           0, 1;
+        return RotZ;
+    }
+    else{
+        std::cout << "enter valid coordinate: X, Y or Z -------------------------------------------------" << std::endl;
+        return empty_Rot;
+    }
 
 }
 
 int main(int argc, char **argv)
 {
-    ros::init(argc, argv, "moveit_with_pykdl");
+    ros::init(argc, argv, "moveit_with_pykdl_left");
     ros::NodeHandle node;
-    ros::CallbackQueue my_queue;
-    node.setCallbackQueue(&my_queue);
-
-    qdot(0) = 0.0; qdot(1) = 0.0; qdot(2) = 0.0; qdot(3) = 0.0; qdot(4) = 0.0; qdot(5) = 0.0; qdot(6) = 0.0;
-    joint_values(0) = 0.0; joint_values(1) = 0.0; joint_values(2) = 0.0; joint_values(3) = 0.0; joint_values(4) = 0.0; joint_values(5) = 0.0; joint_values(6) = 0.0;
-    vel_command_file.open("command.csv");
-    vel_feedback_file.open("feedback.csv");
-    position_feedback_file.open("position.csv");
-    calculated_twist.open("calculated_twist.csv");
-    feedback_twist.open("feedback_twist.csv");
-    ee_twist << 0.0,0.0,0.0,0.0,0.0,0.0;
-    ee_twist_sup << 0.0,0.0,0.0,0.0,0.0,0.0;
     ros::Publisher pub_msg;
     ros::Subscriber sub_jointmsg;
     sub_jointmsg = node.subscribe<sensor_msgs::JointState>("/robot/joint_states",1,jocommCallback);
     pub_msg=node.advertise<baxter_core_msgs::JointCommand>("/robot/limb/left/joint_command",1);
-    my_queue.callAvailable();
-    double rate_hz = 1000;
-    ros::Rate rate(rate_hz);
+    ros::AsyncSpinner my_spinner(4);
+    my_spinner.start();
     usleep(1e6);
-    Eigen::VectorXd current_position(3);
+    double rate_hz = 1000;
+    Eigen::VectorXd current_position(3), current_angles(3);
     //defining joints limits, mean values, ranges and other variables to avoid joint limits later
     Eigen::VectorXd qmin(7),qmax(7),qmoy(7),deltaq(7),Z(7);
     Eigen::MatrixXd Id = Eigen::VectorXd::Ones(7).asDiagonal();
@@ -70,12 +72,10 @@ int main(int argc, char **argv)
     qmin << -1.7016,-2.147,-3.0541,-0.05,-3.059,-1.5707,-3.059;
     qmax << 1.7016,1.047,3.0541,2.618,3.059,2.094,3.059;
     qmoy = 0.5*(qmin + qmax);
-    //double safe_q = 0.5;
-    //qmoy << safe_q, safe_q, safe_q, safe_q, safe_q, safe_q, safe_q;
     deltaq = qmax - qmin;
 
-    Eigen::VectorXd target_pose(3),distance(3),my_values;
-    target_pose << atof(argv[1]),atof(argv[2]),atof(argv[3]);
+    Eigen::VectorXd target_pose(6),distance(6),my_values;
+    target_pose << atof(argv[1]),atof(argv[2]),atof(argv[3]),atof(argv[4]),atof(argv[5]),atof(argv[6]);
 
     robot_model_loader::RobotModelLoader robot_model_loader("robot_description");
     robot_model::RobotModelPtr robot_model = robot_model_loader.getModel();
@@ -89,49 +89,92 @@ int main(int argc, char **argv)
     variable_names[3] = "left_e1"; variable_names[4] = "left_w0"; variable_names[5] = "left_w1";
     variable_names[6] = "left_w2";
 
-    my_queue.callAvailable();
     my_robot_state.setVariablePositions(variable_names,joints_values);
     my_robot_state.copyJointGroupPositions(my_robot_state.getRobotModel()->getJointModelGroup("left_arm"),my_values);
-    Eigen::VectorXd initial_joint_values(7);
-    initial_joint_values = my_values;
-    joint_values = initial_joint_values;
     current_position = my_robot_state.getGlobalLinkTransform("left_gripper").translation();
-    std::cout << "X is: " << current_position(0) << std::endl
-                 << "Y is: " << current_position(1) << std::endl
-                    << "Z is: " << current_position(2) << std::endl
-                       << "*************************************************" << std::endl;
-    distance << target_pose(0) - current_position(0), target_pose(1) - current_position(1), target_pose(2) - current_position(2);
-    std::cout << distance << std::endl;
-    std::cout << "********************************************" << std::endl;
-    double duration = 7.5*distance.norm()/0.8;
+    Eigen::Affine3d f_trans_mat;
+    f_trans_mat = my_robot_state.getGlobalLinkTransform("left_gripper");
+    Eigen::Matrix4d transform_l_ee_w = f_trans_mat.matrix();
+    double Roll, Pitch, Yaw;
 
-    std::cout << my_values << std::endl;
-    std::cout << "********************************************" << std::endl;
-    baxter_core_msgs::JointCommand command_msg;
+    Roll = atan2(transform_l_ee_w(1, 0), transform_l_ee_w(0, 0));
+    Pitch = atan2(-transform_l_ee_w(2, 0), cos(Roll) * transform_l_ee_w(0, 0) + sin(Roll) * transform_l_ee_w(1, 0));
+    Yaw = atan2(sin(Roll) * transform_l_ee_w(0, 2) - cos(Roll) * transform_l_ee_w(1, 2), -sin(Roll) * transform_l_ee_w(0, 1) + cos(Roll) * transform_l_ee_w(1, 1));
 
-    command_msg.mode = command_msg.VELOCITY_MODE;
-    command_msg.names.push_back("left_s0"); command_msg.names.push_back("left_s1"); command_msg.names.push_back("left_e0");
-    command_msg.names.push_back("left_e1"); command_msg.names.push_back("left_w0"); command_msg.names.push_back("left_w1");
-    command_msg.names.push_back("left_w2");
+    current_angles << Roll,Pitch,Yaw;
+    //std::cout << "translation part is: " << std::endl << current_position << std::endl;
+    //std::cout << "orientation part is: " << std::endl << current_angles << std::endl;
 
-    double time_elapsed = 0.0,last_time = 0.0, dt = 0.0;
-    boost::timer my_timer;
-    ros::Time start_my_timer = ros::Time::now();
+    Eigen::Vector3d u;
+    Eigen::Matrix3d Rfinal;
+    Eigen::Matrix3d Rinitial = f_trans_mat.rotation();
+    //if orientation is not defined make the end effector point towards the point
+    if(target_pose(3) == 0.0 && target_pose(4) == 0.0 && target_pose(5) == 0.0) {
+        double angle = atan2(target_pose[1], target_pose[0]);
+        double ang_x = 0, ang_y = 2., ang_z = angle;
+        Rfinal = Rot('z',ang_z)*Rot('y',ang_y)*Rot('x',ang_x);
+        //std::cout << "angle z is: " << ang_z << std::endl;
+        //std::cout << "angle y is: " << ang_y << std::endl;
+        //std::cout << "angle x is: " << ang_x << std::endl;
+    }
+    else
+        Rfinal = Rot('z',target_pose[3])*Rot('y',target_pose[4])*Rot('x',target_pose[5]);
+    //std::cout << "initial orientation is: " << std::endl << Rinitial << std::endl;
+    //std::cout << "final orientation should be: " << std::endl << Rfinal << std::endl;
+
+    //then deduce the difference between the intial and final points of a section in oreintation:
+    Eigen::Matrix3d RotuAlpha = Rfinal*Rinitial.transpose();
+
+    //then we extract the angle alpha:
+    double Calpha=0.5*(RotuAlpha(0,0)+RotuAlpha(1,1)+RotuAlpha(2,2)-1);
+    double Salpha=0.5*sqrt(pow(RotuAlpha(1,2) - RotuAlpha(2,1),2) + pow(RotuAlpha(2,0) - RotuAlpha(0,2),2) + pow(RotuAlpha(0,1) - RotuAlpha(1,0),2));
+    double my_alpha=atan2(Salpha,Calpha);
+
+    //now that we have alpha let's deduce the vector u and skew symmetric which will be used to evaluate the evolution of the orientation with times
+    if (my_alpha == 0){
+        u = Eigen::VectorXd::Zero(3);
+    }
+    else{
+        u << (RotuAlpha(2,1)-RotuAlpha(1,2))/(2*Salpha),
+            (RotuAlpha(0,2)-RotuAlpha(2,0))/(2*Salpha),
+            (RotuAlpha(1,0)-RotuAlpha(0,1))/(2*Salpha);
+        Eigen::Matrix3d uskew;
+        uskew <<     0,  -u(2),  u(1),
+                  u(2),      0, -u(0),
+                 -u(1),   u(0),     0;
+    }
+    std::cout << "vector u is: " << std::endl << u << std::endl;
+    //std::cout << "the whole matrix is: " << std::endl << f_trans_mat.matrix() << std::endl;
+    //std::cout << "initial orientation is: " << std::endl << Rinitial << std::endl;
+    distance << target_pose(0) - current_position(0), target_pose(1) - current_position(1), target_pose(2) - current_position(2),
+            target_pose(3) - current_angles(0), target_pose(4) - current_angles(1),target_pose(5) - current_angles(2);
+    Eigen::Vector3d reduced_distance;
+    reduced_distance << distance(0), distance(1), distance(2);
+    double duration = std::max(7.5*u.norm(),7.5*reduced_distance.norm());
+
+    std::cout << "duration is: " << duration << std::endl;
+    std::cout << "distance is: " << std::endl << reduced_distance << std::endl;
+
+    double time_elapsed = 0.0;
     while(ros::ok() && time_elapsed < duration){
         double rtdot =(30*pow(time_elapsed,2))/pow(duration,3) - (60*pow(time_elapsed,3))/pow(duration,4) + (30*pow(time_elapsed,4))/pow(duration,5);
-        ee_twist << rtdot * distance(0), rtdot * distance(1), rtdot * distance(2), 0.0, 0.0, 0.0;
+        ee_twist << rtdot * distance(0), rtdot * distance(1), rtdot * distance(2), rtdot * my_alpha * u(0), rtdot * my_alpha * u(1), rtdot * my_alpha * u(2);
+        //ee_twist << rtdot * distance(0), rtdot * distance(1), rtdot * distance(2), 0, 0, 0;
         my_robot_state.copyJointGroupPositions(my_robot_state.getRobotModel()->getJointModelGroup("left_arm"),my_values);
         for (int i = 0; i < q.size(); i++)
             q[i] = my_values(i);
         my_robot_state.setVariablePositions(variable_names,q);
         my_robot_state.getJacobian(joint_model_group,right_arm,reference_point,my_jac,false);
-
+        if(fabs((my_jac * my_jac.transpose()).determinant()) < 0.000008){
+            std::cout << "jacobian determinant is less than 0.01: " << std::endl;
+            std::cout << (my_jac * my_jac.transpose()).determinant() << std::endl;
+            return 0;
+        }
         Eigen::JacobiSVD<Eigen::MatrixXd> svdOfJ(my_jac, Eigen::ComputeThinU | Eigen::ComputeThinV);
         const Eigen::MatrixXd U = svdOfJ.matrixU();
         const Eigen::MatrixXd V = svdOfJ.matrixV();
         const Eigen::VectorXd S = svdOfJ.singularValues();
         Eigen::VectorXd Sinv = S;
-
         static const double pinvtoler = std::numeric_limits<float>::epsilon();
         double maxsv = 0.0 ;
         for (std::size_t i = 0; i < static_cast<std::size_t>(S.rows()); ++i)
@@ -149,28 +192,58 @@ int main(int argc, char **argv)
             Z(i) = 2*alpha*(my_values(i) - qmoy(i))/(deltaq(i)*deltaq(i));
         qdot = Jinv * ee_twist + (Id - Jinv * my_jac)*Z;
         my_robot_state.integrateVariableVelocity(joint_model_group,qdot,1.0/rate_hz);
-        rate.sleep();
-        time_elapsed = ros::Time::now().toSec() - start_my_timer.toSec();
+        time_elapsed = time_elapsed + 1.0/rate_hz;
     }
     std::cout << " ************************ I finished ******************************* " << std::endl;
-    vel_command_file.close();
-    vel_feedback_file.close();
-    position_feedback_file.close();
+
     my_robot_state.update(true);
+    baxter_core_msgs::JointCommand command_msg;
     command_msg.mode = command_msg.POSITION_MODE;
-    command_msg.command.clear();
+    command_msg.names.push_back("left_s0"); command_msg.names.push_back("left_s1"); command_msg.names.push_back("left_e0");
+    command_msg.names.push_back("left_e1"); command_msg.names.push_back("left_w0"); command_msg.names.push_back("left_w1");
+    command_msg.names.push_back("left_w2");
+
     command_msg.command.push_back(*my_robot_state.getJointPositions("left_s0")); command_msg.command.push_back(*my_robot_state.getJointPositions("left_s1"));
     command_msg.command.push_back(*my_robot_state.getJointPositions("left_e0")); command_msg.command.push_back(*my_robot_state.getJointPositions("left_e1"));
     command_msg.command.push_back(*my_robot_state.getJointPositions("left_w0")); command_msg.command.push_back(*my_robot_state.getJointPositions("left_w1"));
     command_msg.command.push_back(*my_robot_state.getJointPositions("left_w2"));
     pub_msg.publish(command_msg);
-    std::cout << my_robot_state.getGlobalLinkTransform("left_gripper").translation() << std::endl;
-    std::cout << "s0 is: " << *my_robot_state.getJointPositions("left_s0") << std::endl
-                     << "s1 is: " << *my_robot_state.getJointPositions("left_s1") << std::endl
-                        << "e0 is: " << *my_robot_state.getJointPositions("left_e0") << std::endl
-                        << "e1 is: " << *my_robot_state.getJointPositions("left_e1") << std::endl
-                        << "w0 is: " << *my_robot_state.getJointPositions("left_w0") << std::endl
-                        << "w1 is: " << *my_robot_state.getJointPositions("left_w1") << std::endl
-                        << "w2 is: " << *my_robot_state.getJointPositions("left_w2") << std::endl;
+
+    Eigen::VectorXd final_ee_pose = my_robot_state.getGlobalLinkTransform("left_gripper").translation();
+    Eigen::Vector4d goal_position;
+    goal_position << target_pose(0), target_pose(1), target_pose(2), 1.0;
+    Eigen::Vector3d reduced_goal;
+    reduced_goal << target_pose(0), target_pose(1), target_pose(2);
+    Eigen::Affine3d trans_mat;
+    trans_mat = my_robot_state.getGlobalLinkTransform("left_gripper");
+    transform_l_ee_w = trans_mat.matrix();
+    Eigen::VectorXd result = final_ee_pose - reduced_goal;
+    Eigen::Vector4d error, transform;
+    error << result(0),result(1),result(2),1.0;
+    transform = transform_l_ee_w * error;
+    Eigen::Vector3d last_angles;
+    Pitch = asin(transform_l_ee_w(0,2));
+    if (Pitch == M_PI/2)
+    {
+        Yaw = 0;
+        Roll = atan2(transform_l_ee_w(1,0),-transform_l_ee_w(2,0));
+    }
+    else if (Pitch == -M_PI/2)
+    {
+        Yaw = 0;
+        Roll = -atan2(transform_l_ee_w(1,0),transform_l_ee_w(2,0));
+    }
+    else
+    {
+        Yaw = atan2(-transform_l_ee_w(0,1)/cos(Pitch),transform_l_ee_w(0,0)/cos(Pitch));
+        Roll = atan2(-transform_l_ee_w(1,2)/cos(Pitch),transform_l_ee_w(2,2)/cos(Pitch));
+    }
+    last_angles << Roll,Pitch,Yaw;
+    std::cout << "translation is: " << std::endl << trans_mat.translation() << std::endl;
+    std::cout << "last angles are: " << std::endl << last_angles << std::endl;
+    //std::cout << "error is: " << std::endl << result << std::endl;
+    //std::cout << "goal in ee frame: " << std::endl << transform << std::endl;
+    //std::cout << "ee final pose is: " << std::endl << final_ee_pose << std::endl;
+    std::cout << "real final orientation matrix is: " << std::endl << trans_mat.rotation() << std::endl;
     return 0;
 }
