@@ -110,12 +110,13 @@ int main(int argc, char **argv)
     Eigen::Matrix3d Rinitial = f_trans_mat.rotation();
     //if orientation is not defined make the end effector point towards the point
     if(target_pose(3) == 0.0 && target_pose(4) == 0.0 && target_pose(5) == 0.0) {
-        double angle = atan2(target_pose[1], target_pose[0]);
+        double angle = atan2(target_pose[1] - 0.26, target_pose[0] - 0.064);
         double ang_x = 0, ang_y = 2., ang_z = angle;
         Rfinal = Rot('z',ang_z)*Rot('y',ang_y)*Rot('x',ang_x);
         //std::cout << "angle z is: " << ang_z << std::endl;
         //std::cout << "angle y is: " << ang_y << std::endl;
         //std::cout << "angle x is: " << ang_x << std::endl;
+        std::cout << "angle is: " << angle << std::endl;
     }
     else
         Rfinal = Rot('z',target_pose[3])*Rot('y',target_pose[4])*Rot('x',target_pose[5]);

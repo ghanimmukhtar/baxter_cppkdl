@@ -18,7 +18,7 @@
           right_tip_name:=$(arg right_tip_name)"/>
 
   
-  <node name="moveit_with_pykdl" pkg="baxter_cppkdl" type="moveit_with_pykdl_left" args="0.916924 0.420561 -0.183332 0 0 0" output="screen">
+  <node name="moveit_with_pykdl" pkg="baxter_cppkdl" type="moveit_with_pykdl_left" args="0.9 0. 0.183332 0 0 0" output="screen">
   </node>
   
 
