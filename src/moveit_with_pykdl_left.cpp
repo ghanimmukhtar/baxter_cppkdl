@@ -70,7 +70,8 @@ int main(int argc, char **argv)
     Eigen::Vector3d reference_point(0.0, 0.0, 0.0);
     double alpha = -2;
     qmin << -1.7016,-2.147,-3.0541,-0.05,-3.059,-1.5707,-3.059;
-    qmax << 1.7016,1.047,3.0541,2.618,3.059,2.094,3.059;
+    qmax << 1.7016,1.047,3.0541,2.618,3.059,2.094,3.059;    
+
     qmoy = 0.5*(qmin + qmax);
     deltaq = qmax - qmin;
 
@@ -116,7 +117,7 @@ int main(int argc, char **argv)
         //std::cout << "angle z is: " << ang_z << std::endl;
         //std::cout << "angle y is: " << ang_y << std::endl;
         //std::cout << "angle x is: " << ang_x << std::endl;
-        std::cout << "angle is: " << angle << std::endl;
+        //std::cout << "angle is: " << angle << std::endl;
     }
     else
         Rfinal = Rot('z',target_pose[3])*Rot('y',target_pose[4])*Rot('x',target_pose[5]);
@@ -144,7 +145,7 @@ int main(int argc, char **argv)
                   u(2),      0, -u(0),
                  -u(1),   u(0),     0;
     }
-    std::cout << "vector u is: " << std::endl << u << std::endl;
+    //std::cout << "vector u is: " << std::endl << u << std::endl;
     //std::cout << "the whole matrix is: " << std::endl << f_trans_mat.matrix() << std::endl;
     //std::cout << "initial orientation is: " << std::endl << Rinitial << std::endl;
     distance << target_pose(0) - current_position(0), target_pose(1) - current_position(1), target_pose(2) - current_position(2),
@@ -153,8 +154,8 @@ int main(int argc, char **argv)
     reduced_distance << distance(0), distance(1), distance(2);
     double duration = std::max(7.5*u.norm(),7.5*reduced_distance.norm());
 
-    std::cout << "duration is: " << duration << std::endl;
-    std::cout << "distance is: " << std::endl << reduced_distance << std::endl;
+    //std::cout << "duration is: " << duration << std::endl;
+    //std::cout << "distance is: " << std::endl << reduced_distance << std::endl;
 
     double time_elapsed = 0.0;
     while(ros::ok() && time_elapsed < duration){
@@ -195,8 +196,8 @@ int main(int argc, char **argv)
         my_robot_state.integrateVariableVelocity(joint_model_group,qdot,1.0/rate_hz);
         time_elapsed = time_elapsed + 1.0/rate_hz;
     }
+    std::cout << my_values << std::endl;
     std::cout << " ************************ I finished ******************************* " << std::endl;
-
     my_robot_state.update(true);
     baxter_core_msgs::JointCommand command_msg;
     command_msg.mode = command_msg.POSITION_MODE;
@@ -240,11 +241,14 @@ int main(int argc, char **argv)
         Roll = atan2(-transform_l_ee_w(1,2)/cos(Pitch),transform_l_ee_w(2,2)/cos(Pitch));
     }
     last_angles << Roll,Pitch,Yaw;
-    std::cout << "translation is: " << std::endl << trans_mat.translation() << std::endl;
-    std::cout << "last angles are: " << std::endl << last_angles << std::endl;
+    for (int i = 0; i < joints_values.size(); ++i)
+        std::cout << joints_values[i] << std::endl;
+    std::cout << "*************************************" << std::endl;
+    //std::cout << "translation is: " << std::endl << trans_mat.translation() << std::endl;
+    //std::cout << "last angles are: " << std::endl << last_angles << std::endl;
     //std::cout << "error is: " << std::endl << result << std::endl;
     //std::cout << "goal in ee frame: " << std::endl << transform << std::endl;
     //std::cout << "ee final pose is: " << std::endl << final_ee_pose << std::endl;
-    std::cout << "real final orientation matrix is: " << std::endl << trans_mat.rotation() << std::endl;
+    //std::cout << "real final orientation matrix is: " << std::endl << trans_mat.rotation() << std::endl;
     return 0;
 }
